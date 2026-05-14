@@ -1,0 +1,94 @@
+from rdkit import Chem
+from rdkit.Chem import Descriptors, rdMolDescriptors, Draw
+from rdkit.Chem.Draw import IPythonConsole
+from IPython.display import display
+import pandas as pd
+
+def draw_structure(mol, smiles, size=(400, 300)):
+    """Vẽ công thức cấu tạo 2D từ mol object."""
+    from rdkit.Chem import rdDepictor
+    rdDepictor.Compute2DCoords(mol)          # ✅ tính toạ độ 2D trước khi vẽ
+    img = Draw.MolToImage(mol, size=size)
+    print(f"\n🖼️  Công thức cấu tạo của: {smiles}")
+    display(img)
+
+def analyze_smiles(smiles):
+    """Tính các tính chất lý hoá và vẽ cấu trúc phân tử."""
+    mol = Chem.MolFromSmiles(smiles)
+    if mol is None:
+        print("❌ SMILES không hợp lệ.")
+        return None
+
+    # ✅ Vẽ công thức cấu tạo ngay sau khi nhập SMILES
+    draw_structure(mol, smiles)
+
+    properties = {
+        "SMILES"                          : smiles,
+        "Molecular Formula"               : rdMolDescriptors.CalcMolFormula(mol),
+        "Molecular Weight"                : round(Descriptors.MolWt(mol), 3),
+        "LogP"                            : round(Descriptors.MolLogP(mol), 3),
+        "H-Bond Donors  (HBD)"           : Descriptors.NumHDonors(mol),
+        "H-Bond Acceptors (HBA)"         : Descriptors.NumHAcceptors(mol),
+        "Topological Polar Surface Area"  : round(Descriptors.TPSA(mol), 3),
+        "Rotatable Bonds"                 : Descriptors.NumRotatableBonds(mol),
+        "Number of Rings"                 : Descriptors.RingCount(mol),
+    }
+
+    # In bảng tính chất đẹp hơn
+    df = pd.DataFrame(properties.items(), columns=["Property", "Value"])
+    display(df.style.set_properties(**{"text-align": "left"}).hide(axis="index"))
+
+    return properties
+
+def identify_stereochemistry(mol, smiles):
+    """Xác định cấu hình tuyệt đối R/S và E/Z."""
+    Chem.AssignStereochemistry(mol, cleanIt=True, force=True)
+
+    # ── R/S ──────────────────────────────────────────────────────────────────
+    chiral_centers = Chem.FindMolChiralCenters(mol, includeUnassigned=True)
+    if not chiral_centers:
+        print("ℹ️  Không có trung tâm lập thể (chiral center).")
+    else:
+        print(f"\n🔍 {len(chiral_centers)} trung tâm lập thể (R/S):")
+        for atom_idx, config in chiral_centers:
+            symbol = mol.GetAtomWithIdx(atom_idx).GetSymbol()
+            status = f"Cấu hình: {config}" if config != "?" else "Chưa xác định (thiếu @ hoặc @@)"
+            print(f"  - {symbol} tại vị trí {atom_idx}: {status}")
+
+    # ── E/Z ──────────────────────────────────────────────────────────────────
+    ez_bonds = [
+        bond for bond in mol.GetBonds()
+        if bond.GetStereo() in (Chem.BondStereo.STEREOE, Chem.BondStereo.STEREOZ)
+    ]
+    if not ez_bonds:
+        print("ℹ️  Không có liên kết đôi có cấu hình E/Z.")
+    else:
+        print(f"\n🔍 {len(ez_bonds)} liên kết đôi (E/Z):")
+        for bond in ez_bonds:
+            config = "E" if bond.GetStereo() == Chem.BondStereo.STEREOE else "Z"
+            i, j = bond.GetBeginAtomIdx(), bond.GetEndAtomIdx()
+            si = mol.GetAtomWithIdx(i).GetSymbol()
+            sj = mol.GetAtomWithIdx(j).GetSymbol()
+            print(f"  - {si}({i})={sj}({j}): cấu hình {config}")
+
+def main():
+    while True:
+        smi = input("\nNhập SMILES (hoặc 'exit' để thoát): ").strip()
+        if smi.lower() in ['exit', 'thoat']:
+            print("👋 Tạm biệt!")
+            break
+
+        mol = Chem.MolFromSmiles(smi)
+        if mol is None:
+            print("❌ SMILES không hợp lệ, thử lại.")
+            continue
+
+        # ── 1. Vẽ cấu trúc + tính tính chất ─────────────────────────────────
+        analyze_smiles(smi)
+
+        # ── 2. Xác định cấu hình lập thể ─────────────────────────────────────
+        print("\n📐 Phân tích cấu hình lập thể:")
+        identify_stereochemistry(mol, smi)
+        print("─" * 45)
+
+main()
